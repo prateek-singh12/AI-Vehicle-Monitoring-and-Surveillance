@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Detection Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f4f4;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        .container {
+            width: 50%;
+            margin: auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1, h2 {
+            color: #333;
+        }
+        
+        form {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #e9ecef;
+            border-radius: 5px;
+        }
+        
+        input[type="text"], input[type="number"], input[type="file"] {
+            padding: 10px;
+            width: calc(100% - 22px);
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: 0.3s;
+            font-size: 16px;
+        }
+        
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        .result-box {
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 5px;
+            background-color: #d1ecf1;
+            color: #0c5460;
+            font-weight: bold;
+        }
+
+        .analytics-section, .live-feed-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border: 1px solid #dee2e6;
+        }
+
+        .analytics-section h2, .live-feed-section h2 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .analytics-section p, .live-feed-section p {
+            margin: 5px 0;
+            font-size: 16px;
+        }
+
+        .analytics-section p span {
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .analytics-section ul, .live-feed-section ul {
+            list-style: none;
+            padding: 0;
+            margin: 10px 0 0 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .analytics-section ul li, .live-feed-section ul li {
+            padding: 5px 0;
+            font-size: 14px;
+            color: #555;
+        }
+
+        progress {
+            width: 100%;
+            height: 20px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><i class="fas fa-car"></i> Vehicle Detection Dashboard</h1>
+
+        
+        <h2>Upload Video</h2>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <input type="file" name="file" accept="video/*">
+            <button type="submit">Upload and Process</button>
+        </form>
+        <div class="live-feed-section">
+            <h2>Live Processing Feedback</h2>
+            <p>Progress: <span id="progressText">0%</span></p>
+            <progress id="progressBar" value="0" max="100"></progress>
+            <p>Detected Vehicles:</p>
+            <ul id="liveFeed">
+                <li>Waiting for detections...</li>
+            </ul>
+        </div>
+        <div id="results" class="result-box"></div>
+
+        <h2>Manage Blacklisted Number Plates</h2>
+        <form id="blacklistForm">
+            <input type="text" name="numberplate" placeholder="Enter Number Plate">
+            <button type="button" id="addBlacklist">Add to Blacklist</button>
+            <button type="button" id="removeBlacklist">Remove from Blacklist</button>
+        </form>
+        <div id="blacklistResults" class="result-box"></div>
+
+        <h2>Set Speed Threshold</h2>
+        <form id="thresholdForm">
+            <input type="number" name="threshold" placeholder="Enter Speed Threshold (km/h)">
+            <button type="submit">Set Threshold</button>
+        </form>
+        <div id="thresholdResults" class="result-box"></div>
+
+        <div class="analytics-section">
+            <h2>Analytics Dashboard</h2>
+            <p>Total Vehicles Processed: <span id="totalVehicles">0</span></p>
+            <p>Average Speed: <span id="averageSpeed">0</span> km/h</p>
+            <p>Overspeeding Vehicles: <span id="overspeeding">0</span></p>
+            <p>Blacklisted Vehicles: <span id="blacklisted">0</span></p>
+            <p>Top Violators:</p>
+            <ul id="topViolators">
+                <li>No violators yet.</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.1/socket.io.js"></script>
+    <script>
+        $(document).ready(function() {
+            const socket = io();
+
+            socket.on('progress_update', function(data) {
+                if (data.progress === -1) {
+                    $('#progressText').text('Processing... (unknown duration)');
+                    $('#progressBar').attr('value', 0);
+                } else {
+                    $('#progressText').text(Math.round(data.progress) + '%');
+                    $('#progressBar').attr('value', data.progress);
+                }
+            });
+
+            socket.on('detection_update', function(data) {
+                const liveFeed = $('#liveFeed');
+                liveFeed.find('li:contains("Waiting for detections...")').remove();
+                const statusText = data.status ? ` (${data.status})` : '';
+                liveFeed.prepend(
+                    `<li>Track ID: ${data.track_id} | Plate: ${data.numberplate} | Speed: ${data.speed} km/h${statusText}</li>`
+                );
+                if (liveFeed.children().length > 10) {
+                    liveFeed.children().last().remove();
+                }
+            });
+
+            function fetchStats() {
+                $.ajax({
+                    url: '/stats',
+                    type: 'GET',
+                    success: function(response) {
+                        $('#totalVehicles').text(response.total_vehicles);
+                        $('#averageSpeed').text(response.average_speed);
+                        $('#overspeeding').text(response.overspeeding);
+                        $('#blacklisted').text(response.blacklisted);
+
+                        var topViolatorsList = $('#topViolators');
+                        topViolatorsList.empty();
+                        if (response.top_violators.length > 0) {
+                            response.top_violators.forEach(function(violator) {
+                                topViolatorsList.append(
+                                    `<li>${violator.numberplate}: ${violator.violation_count} violations</li>`
+                                );
+                            });
+                        } else {
+                            topViolatorsList.append('<li>No violators yet.</li>');
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.log('Error fetching stats:', error);
+                    }
+                });
+            }
+
+            
+            fetchStats();
+
+            
+            $('#uploadForm').submit(function(e) {
+                e.preventDefault();
+                $('#liveFeed').empty().append('<li>Waiting for detections...</li>');
+                $('#progressText').text('0%');
+                $('#progressBar').attr('value', 0);
+
+                var formData = new FormData(this);
+                $.ajax({
+                    url: '/upload',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function(response) {
+                        $('#results').html('<p>Video processed. Results: ' + JSON.stringify(response) + '</p>');
+                        fetchStats();
+                    },
+                    error: function(xhr, status, error) {
+                        $('#results').html('<p>Error: ' + error + '</p>');
+                    }
+                });
+            });
+
+            $('#addBlacklist').click(function() {
+                var numberplate = $('input[name=numberplate]').val().replace(" ", "");
+                $.ajax({
+                    url: '/blacklist',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ action: 'add', numberplate: numberplate }),
+                    success: function(response) {
+                        $('#blacklistResults').html('<p>' + response.message + '</p>');
+                        fetchStats();
+                    },
+                    error: function(xhr, status, error) {
+                        $('#blacklistResults').html('<p>Error: ' + error + '</p>');
+                    }
+                });
+            });
+
+            $('#removeBlacklist').click(function() {
+                var numberplate = $('input[name=numberplate]').val().replace(" ", "");
+                $.ajax({
+                    url: '/blacklist',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ action: 'remove', numberplate: numberplate }),
+                    success: function(response) {
+                        $('#blacklistResults').html('<p>' + response.message + '</p>');
+                        fetchStats();
+                    },
+                    error: function(xhr, status, error) {
+                        $('#blacklistResults').html('<p>Error: ' + error + '</p>');
+                    }
+                });
+            });
+
+            $('#thresholdForm').submit(function(e) {
+                e.preventDefault();
+                var threshold = $('input[name=threshold]').val();
+                $.ajax({
+                    url: '/threshold',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ threshold: parseInt(threshold) }),
+                    success: function(response) {
+                        $('#thresholdResults').html('<p>' + response.message + '</p>');
+                        fetchStats();
+                    },
+                    error: function(xhr, status, error) {
+                        $('#thresholdResults').html('<p>Error: ' + error + '</p>');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
